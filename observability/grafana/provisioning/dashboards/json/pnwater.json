@@ -1,0 +1,61 @@
+{
+  "title": "PNWater",
+  "uid": "pnwater-overview",
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Readings published / sec (by river)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (river_id) (rate(pnwater_readings_published_total[1m]))",
+          "legendFormat": "{{river_id}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Anomalies detected / sec (by river)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (river_id) (rate(pnwater_anomalies_detected_total[1m]))",
+          "legendFormat": "{{river_id}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Anomalies detected / sec (by parameter)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (parameter) (rate(pnwater_anomalies_detected_total[1m]))",
+          "legendFormat": "{{parameter}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Alerts recorded / sec (by severity)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (severity) (rate(pnwater_alerts_recorded_total[1m]))",
+          "legendFormat": "{{severity}}"
+        }
+      ]
+    }
+  ]
+}

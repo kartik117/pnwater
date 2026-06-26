@@ -18,13 +18,23 @@ class ReadingRow(Base):
     (tests). `create_hypertable` is issued separately in db.py with
     `if_not_exists` and is a no-op (silently skipped) against a backend
     that doesn't have the extension -- see init_db().
+
+    Primary key is (id, recorded_at), not just id: TimescaleDB requires
+    the partitioning column to be part of every unique constraint on a
+    hypertable, since uniqueness can't be cheaply enforced across
+    partitions otherwise. `create_hypertable` fails outright against a
+    table whose PK is just `id` -- found by actually running migrate
+    against real TimescaleDB, not from the SQLite-backed tests, which
+    never exercise create_hypertable at all.
     """
 
     __tablename__ = "readings"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     river_id: Mapped[str] = mapped_column(String(32), index=True)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, default=_utcnow)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), primary_key=True, index=True, default=_utcnow
+    )
     temp_c: Mapped[float] = mapped_column(Float)
     dissolved_oxygen_mgl: Mapped[float] = mapped_column(Float)
     ph: Mapped[float] = mapped_column(Float)

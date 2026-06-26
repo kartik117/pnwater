@@ -1,0 +1,111 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: pnwater
+      POSTGRES_PASSWORD: pnwater
+      POSTGRES_DB: pnwater
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pnwater"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.18
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    ports: ["9092:9092"]
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  migrate:
+    build: .
+    command: python -m pnwater.migrate
+    environment:
+      PNWATER_DATABASE_URL: postgresql+psycopg://pnwater:pnwater@timescaledb:5432/pnwater
+    depends_on:
+      timescaledb: { condition: service_healthy }
+    restart: "no"
+
+  simulator:
+    build: .
+    command: python -m pnwater.services.simulator.main
+    environment:
+      PNWATER_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+    ports: ["8002:8000"]
+    depends_on:
+      redpanda: { condition: service_healthy }
+
+  ingest:
+    build: .
+    command: python -m pnwater.services.ingest.main
+    environment:
+      PNWATER_DATABASE_URL: postgresql+psycopg://pnwater:pnwater@timescaledb:5432/pnwater
+      PNWATER_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+    ports: ["8003:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redpanda: { condition: service_healthy }
+
+  anomaly_detector:
+    build: .
+    command: python -m pnwater.services.anomaly_detector.main
+    environment:
+      PNWATER_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+    ports: ["8004:8000"]
+    depends_on:
+      redpanda: { condition: service_healthy }
+
+  alert_agent:
+    build: .
+    command: python -m pnwater.services.alert_agent.main
+    environment:
+      PNWATER_DATABASE_URL: postgresql+psycopg://pnwater:pnwater@timescaledb:5432/pnwater
+      PNWATER_KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      # PNWATER_GOOGLE_API_KEY left unset on purpose -- see
+      # src/pnwater/services/alert_agent/llm.py. Pass it at runtime
+      # (docker compose run -e PNWATER_GOOGLE_API_KEY=... or a .env
+      # file) to turn on the LLM explanation step; the deterministic
+      # message is what ships without it.
+    ports: ["8005:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redpanda: { condition: service_healthy }
+
+  api:
+    build: .
+    command: uvicorn pnwater.services.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      PNWATER_DATABASE_URL: postgresql+psycopg://pnwater:pnwater@timescaledb:5432/pnwater
+    ports: ["8001:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: pnwater
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus]

@@ -15,14 +15,14 @@ import xgboost as xgb
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 
+from pnwater.config import settings
 from pnwater.ml.dataset import generate_dataset
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-MODEL_PATH = REPO_ROOT / "models" / "anomaly_model.joblib"
-METRICS_PATH = REPO_ROOT / "models" / "metrics.json"
+MODEL_PATH = Path(settings.model_path)
+METRICS_PATH = Path(settings.metrics_path)
 
 
 def main() -> None:
