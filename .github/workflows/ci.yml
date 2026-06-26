@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: pytest
+      - run: ruff check .
+
+  # Every unit test mocks Postgres/Kafka and stubs or loads the model
+  # directly, so this job is the only one that proves the real
+  # containers talk to each other: builds the images, brings up
+  # TimescaleDB + Redpanda + all five services, and polls the read API
+  # until readings actually land.
+  #
+  # Deliberately does NOT assert that an alert shows up: anomaly
+  # injection is a 3% chance per river per tick, so "at least one alert
+  # within the CI time budget" is true most runs but not guaranteed --
+  # asserting on it would make this flaky for the wrong reason. Readings
+  # landing is deterministic and is what this job checks.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build
+
+      - name: Wait for api
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8001/health && exit 0
+            sleep 2
+          done
+          echo "api never became healthy" >&2
+          exit 1
+
+      - name: Wait for readings to land via the read API
+        run: |
+          for i in $(seq 1 20); do
+            count=$(curl -sf http://localhost:8001/readings/latest | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+            echo "rivers with a reading: $count"
+            if [ "$count" -ge 5 ]; then exit 0; fi
+            sleep 3
+          done
+          echo "fewer than 5 rivers reported a reading within the time budget" >&2
+          exit 1
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose logs
